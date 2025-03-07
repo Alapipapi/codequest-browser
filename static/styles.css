@@ -1,0 +1,56 @@
+.challenge-card {
+    transition: transform 0.2s, background-color 0.3s;
+    cursor: pointer;
+}
+
+.challenge-card:hover:not(.locked) {
+    transform: translateY(-2px);
+}
+
+.completed {
+    opacity: 0.7;
+    background-color: #f0fff4;
+}
+
+.locked {
+    background-color: #fee2e2;
+    cursor: not-allowed;
+    opacity: 0.8;
+}
+
+.locked:hover {
+    transform: none;
+}
+
+.cooldown-timer {
+    color: #dc2626;
+    font-size: 0.875rem;
+    margin-top: 0.5rem;
+}
+
+#code-editor {
+    font-family: 'Courier New', monospace;
+    resize: vertical;
+    min-height: 150px;
+    background-color: #f8fafc;
+}
+
+.stats {
+    background: linear-gradient(135deg, #fff 0%, #f0f4ff 100%);
+    border: 1px solid #e2e8f0;
+}
+
+@keyframes points-increase {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+}
+
+.points-animation {
+    animation: points-increase 0.5s ease-out;
+}
+
+.incorrect-answer {
+    background-color: #fee2e2;
+    border-color: #dc2626;
+}

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CodeQuest Browser</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/styles.css">
+    <style>
+        .points-animation {
+            animation: points-pulse 0.5s ease-in-out;
+        }
+        @keyframes points-pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <header class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-900">CodeQuest Browser</h1>
+            <div id="points-display" class="text-xl font-semibold text-indigo-600 points-animation">Points: <span id="points">0</span></div>
+        </header>
+
+        <div class="grid md:grid-cols-2 gap-8">
+            <div class="challenges-section bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-2xl font-bold mb-4">Challenges</h2>
+                
+                <!-- Filter Container -->
+                <div id="filter-container" class="mb-6"></div>
+                
+                <div id="challenges-list" class="space-y-4">
+                    <div class="p-4 text-gray-600">Loading challenges...</div>
+                </div>
+            </div>
+
+            <div class="workspace-section bg-white p-6 rounded-lg shadow-md">
+                <h2 class="text-2xl font-bold mb-4">Workspace</h2>
+                <div id="current-challenge" class="mb-4">
+                    <p class="text-gray-600">Select a challenge to begin</p>
+                </div>
+                <textarea id="code-editor" class="w-full h-32 p-2 border rounded-md font-mono" placeholder="Write your code here..." style="display: none;"></textarea>
+                <button id="submit-btn" class="mt-4 bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700" style="display: none;">Submit</button>
+            </div>
+        </div>
+    </div>
+    <script src="/static/app.js" defer></script>
+</body>
+</html>
