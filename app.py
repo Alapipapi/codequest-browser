@@ -1,39 +1,163 @@
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, session
 from flask_cors import CORS
-import os
 from datetime import datetime, timedelta
-import json
+import secrets
+from database import *
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
+app.secret_key = secrets.token_hex(16)  # Secure secret key for sessions
 CORS(app)
 
-# Game state (in-memory for demo)
-user_points = 0
-completed_challenges = set()
-challenge_cooldowns = {}  # Store challenge cooldowns
+# Initialize database
+init_db()
 
-# Load completed challenges from file
-COMPLETED_CHALLENGES_FILE = 'completed_challenges.json'
+@app.before_request
+def before_request():
+    # Create or get user session
+    if 'user_id' not in session:
+        # Create a temporary user ID for the session
+        username = f'user_{secrets.token_hex(8)}'
+        user = get_or_create_user(username)
+        session['user_id'] = user['id']
 
-def load_completed_challenges():
-    global completed_challenges
+@app.route('/')
+def index():
+    return send_from_directory('static', 'index.html')
+
+@app.route('/api/user')
+def get_user():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # Get user data
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+    user = cursor.fetchone()
+    db.close()
+    
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    return jsonify({
+        'id': user['id'],
+        'username': user['username'],
+        'points': user['points']
+    })
+
+@app.route('/api/submit', methods=['POST'])
+def submit_challenge():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'User not found'}), 404
+
+    data = request.get_json()
+    if not data or 'challengeId' not in data:
+        return jsonify({'error': 'Invalid request data'}), 400
+    
+    challenge_id = data['challengeId']
+    challenge = next((c for c in get_challenge_list() if c['id'] == challenge_id), None)
+    
+    if not challenge:
+        return jsonify({'error': 'Challenge not found'}), 404
+    
+    # Check if challenge is already completed
+    if is_challenge_completed(user_id, challenge_id):
+        return jsonify({
+            'error': 'Challenge already completed',
+            'completed': True,
+            'points': challenge['points']
+        }), 409
+    
+    # Check cooldown
+    cooldown = get_challenge_cooldown(user_id, challenge_id)
+    if cooldown and datetime.fromisoformat(cooldown) > datetime.now():
+        return jsonify({
+            'error': 'Challenge is locked',
+            'locked_until': cooldown
+        }), 423
+    
+    # Handle quiz challenges
+    if challenge['type'] == 'quiz':
+        if 'answer' not in data:
+            return jsonify({'error': 'No answer provided'}), 400
+            
+        is_correct = data['answer'] == challenge['correct']
+        if is_correct:
+            # Update points and mark as completed
+            new_points = update_user_points(user_id, challenge['points'])
+            mark_challenge_completed(user_id, challenge_id)
+            return jsonify({
+                'correct': True,
+                'points': challenge['points'],
+                'total_points': new_points,
+                'message': 'Correct answer!'
+            })
+        else:
+            # Set 24-hour cooldown
+            locked_until = (datetime.now() + timedelta(hours=24)).isoformat()
+            set_challenge_cooldown(user_id, challenge_id, locked_until)
+            return jsonify({
+                'correct': False,
+                'message': 'Incorrect answer',
+                'locked_until': locked_until
+            })
+    
+    # Handle coding challenges
+    if 'code' not in data:
+        return jsonify({'error': 'No code provided'}), 400
+        
+    code = data['code'].strip()
+    if not code:
+        return jsonify({'error': 'Empty code submission'}), 400
+    
+    # Evaluate code
     try:
-        if os.path.exists(COMPLETED_CHALLENGES_FILE):
-            with open(COMPLETED_CHALLENGES_FILE, 'r') as f:
-                completed_list = json.load(f)
-                completed_challenges = set(completed_list)
+        is_correct = evaluate_code(code, challenge)
+        if is_correct:
+            # Update points and mark as completed
+            new_points = update_user_points(user_id, challenge['points'])
+            mark_challenge_completed(user_id, challenge_id)
+            return jsonify({
+                'correct': True,
+                'points': challenge['points'],
+                'total_points': new_points,
+                'message': 'Correct solution!'
+            })
+        else:
+            # Set 24-hour cooldown
+            locked_until = (datetime.now() + timedelta(hours=24)).isoformat()
+            set_challenge_cooldown(user_id, challenge_id, locked_until)
+            return jsonify({
+                'correct': False,
+                'message': 'Incorrect solution',
+                'locked_until': locked_until
+            })
     except Exception as e:
-        print(f"Error loading completed challenges: {e}")
+        return jsonify({
+            'error': 'Error evaluating code',
+            'message': str(e)
+        }), 500
 
-def save_completed_challenges():
-    try:
-        with open(COMPLETED_CHALLENGES_FILE, 'w') as f:
-            json.dump(list(completed_challenges), f)
-    except Exception as e:
-        print(f"Error saving completed challenges: {e}")
+@app.route('/api/challenges')
+def get_challenges():
+    """Get all challenges with their completion status."""
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'User not found'}), 404
 
-# Load completed challenges at startup
-load_completed_challenges()
+    challenges = get_challenge_list()
+    completed_challenges = get_user_completed_challenges(user_id)
+    cooldowns = get_user_cooldowns(user_id)
+    
+    # Add completion status and cooldown to each challenge
+    for challenge in challenges:
+        challenge['completed'] = challenge['id'] in completed_challenges
+        if challenge['id'] in cooldowns:
+            challenge['locked_until'] = cooldowns[challenge['id']]
+    
+    return jsonify(challenges)
 
 def get_challenge_list():
     return [
@@ -279,110 +403,6 @@ def get_challenge_list():
         }
     ]
 
-@app.route('/')
-def serve_static():
-    return send_from_directory(app.static_folder, 'index.html')
-
-@app.route('/api/challenges')
-def get_challenges():
-    """Get all challenges with their completion status."""
-    challenges = get_challenge_list()
-    
-    # Add completion status to each challenge
-    for challenge in challenges:
-        challenge['completed'] = challenge['id'] in completed_challenges
-        cooldown = challenge_cooldowns.get(challenge['id'])
-        if cooldown:
-            challenge['locked_until'] = cooldown
-    
-    return jsonify(challenges)
-
-@app.route('/api/submit', methods=['POST'])
-def submit_challenge():
-    data = request.get_json()
-    if not data or 'challengeId' not in data:
-        return jsonify({'error': 'Invalid request data'}), 400
-    
-    challenge_id = data['challengeId']
-    challenge = next((c for c in get_challenge_list() if c['id'] == challenge_id), None)
-    
-    if not challenge:
-        return jsonify({'error': 'Challenge not found'}), 404
-    
-    # Check if challenge is already completed
-    if challenge_id in completed_challenges:
-        return jsonify({
-            'error': 'Challenge already completed',
-            'completed': True,
-            'points': challenge['points']
-        }), 409
-    
-    # Check cooldown
-    cooldown = challenge_cooldowns.get(challenge_id)
-    if cooldown and datetime.fromisoformat(cooldown) > datetime.now():
-        return jsonify({
-            'error': 'Challenge is locked',
-            'locked_until': cooldown
-        }), 423
-    
-    # Handle quiz challenges
-    if challenge['type'] == 'quiz':
-        if 'answer' not in data:
-            return jsonify({'error': 'No answer provided'}), 400
-            
-        is_correct = data['answer'] == challenge['correct']
-        if is_correct:
-            completed_challenges.add(challenge_id)
-            save_completed_challenges()  # Save to file
-            return jsonify({
-                'correct': True,
-                'points': challenge['points'],
-                'message': 'Correct answer!'
-            })
-        else:
-            # Set 24-hour cooldown
-            locked_until = (datetime.now() + timedelta(hours=24)).isoformat()
-            challenge_cooldowns[challenge_id] = locked_until
-            return jsonify({
-                'correct': False,
-                'message': 'Incorrect answer',
-                'locked_until': locked_until
-            })
-    
-    # Handle coding challenges
-    if 'code' not in data:
-        return jsonify({'error': 'No code provided'}), 400
-        
-    code = data['code'].strip()
-    if not code:
-        return jsonify({'error': 'Empty code submission'}), 400
-    
-    # Evaluate code
-    try:
-        is_correct = evaluate_code(code, challenge)
-        if is_correct:
-            completed_challenges.add(challenge_id)
-            save_completed_challenges()  # Save to file
-            return jsonify({
-                'correct': True,
-                'points': challenge['points'],
-                'message': 'Correct solution!'
-            })
-        else:
-            # Set 24-hour cooldown
-            locked_until = (datetime.now() + timedelta(hours=24)).isoformat()
-            challenge_cooldowns[challenge_id] = locked_until
-            return jsonify({
-                'correct': False,
-                'message': 'Incorrect solution',
-                'locked_until': locked_until
-            })
-    except Exception as e:
-        return jsonify({
-            'error': 'Error evaluating code',
-            'message': str(e)
-        }), 500
-
 def evaluate_code(code, challenge):
     """Evaluate submitted code for coding challenges."""
     try:
@@ -424,13 +444,6 @@ def evaluate_code(code, challenge):
     except Exception as e:
         print(f"Error evaluating code: {e}")
         return False
-
-@app.route('/api/user_stats')
-def get_user_stats():
-    return jsonify({
-        'points': user_points,
-        'completed_challenges': list(completed_challenges)
-    })
 
 if __name__ == '__main__':
     app.run(debug=True)

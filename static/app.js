@@ -1,9 +1,99 @@
+// Game state
 let challenges = [];
 let currentChallenge = null;
-let userPoints = parseInt(localStorage.getItem('userPoints')) || 0;
 let currentDifficultyFilter = 'all';
 let currentTypeFilter = 'all';
 let currentSort = 'default';
+
+// Initialize game
+async function initializeGame() {
+    try {
+        // Get user data
+        const userResponse = await fetch('/api/user');
+        const userData = await userResponse.json();
+        if (userData.points !== undefined) {
+            document.getElementById('points-display').textContent = `Points: ${userData.points}`;
+        }
+
+        // Get challenges
+        const challengesResponse = await fetch('/api/challenges');
+        challenges = await challengesResponse.json();
+        
+        // Render UI
+        renderFilters();
+        renderChallenges();
+    } catch (error) {
+        console.error('Error initializing game:', error);
+        showMessage('error', 'Failed to initialize game. Please refresh the page.');
+    }
+}
+
+// Challenge submission
+async function submitChallenge() {
+    if (!currentChallenge) return;
+
+    let data = {
+        challengeId: currentChallenge.id
+    };
+
+    if (currentChallenge.type === 'quiz') {
+        const selectedAnswer = document.querySelector('input[name="quiz-answer"]:checked');
+        if (!selectedAnswer) {
+            showMessage('error', 'Please select an answer');
+            return;
+        }
+        data.answer = parseInt(selectedAnswer.value);
+    } else {
+        const codeEditor = document.getElementById('code-editor');
+        if (!codeEditor || !codeEditor.value.trim()) {
+            showMessage('error', 'Please write some code');
+            return;
+        }
+        data.code = codeEditor.value;
+    }
+
+    try {
+        const response = await fetch('/api/submit', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            if (result.correct) {
+                showMessage('success', `${result.message} +${result.points} points!`);
+                document.getElementById('points-display').textContent = `Points: ${result.total_points}`;
+                closeChallenge();
+                await initializeGame(); // Refresh challenges to update completion status
+            } else {
+                showMessage('error', result.message);
+                if (result.locked_until) {
+                    closeChallenge();
+                    await initializeGame(); // Refresh challenges to update cooldown
+                }
+            }
+        } else {
+            if (result.error === 'Challenge already completed') {
+                showMessage('info', 'Challenge already completed');
+                closeChallenge();
+                await initializeGame();
+            } else if (result.error === 'Challenge is locked') {
+                showMessage('error', `Challenge is locked. Try again later.`);
+                closeChallenge();
+                await initializeGame();
+            } else {
+                showMessage('error', result.error || 'Failed to submit challenge');
+            }
+        }
+    } catch (error) {
+        console.error('Error submitting challenge:', error);
+        showMessage('error', 'Failed to submit challenge. Please try again.');
+    }
+}
 
 // Load cooldowns from localStorage
 const COOLDOWN_KEY = 'challenge_cooldowns';
@@ -330,185 +420,66 @@ async function submitChallenge() {
         return;
     }
 
-    const codeEditor = document.getElementById('code-editor');
-    if (!codeEditor) return;
-    
-    const code = codeEditor.value.trim();
-    if (!code) {
-        alert('Please write some code before submitting.');
-        return;
+    let data = {
+        challengeId: currentChallenge.id
+    };
+
+    if (currentChallenge.type === 'quiz') {
+        const selectedAnswer = document.querySelector('input[name="quiz-answer"]:checked');
+        if (!selectedAnswer) {
+            showMessage('error', 'Please select an answer');
+            return;
+        }
+        data.answer = parseInt(selectedAnswer.value);
+    } else {
+        const codeEditor = document.getElementById('code-editor');
+        if (!codeEditor || !codeEditor.value.trim()) {
+            showMessage('error', 'Please write some code');
+            return;
+        }
+        data.code = codeEditor.value;
     }
-    
+
     try {
         const response = await fetch('/api/submit', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                challengeId: currentChallenge.id,
-                code: code
-            })
+            body: JSON.stringify(data)
         });
-        
+
         const result = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(result.error || 'Failed to submit code');
-        }
-        
-        if (result.correct) {
-            // Mark challenge as completed and save
-            currentChallenge.completed = true;
-            saveCompletedChallenges();
-            
-            // Update points
-            if (result.points) {
-                updatePoints(userPoints + result.points);
-            }
-            
-            // Show success message
-            const workspace = document.getElementById('current-challenge');
-            if (workspace) {
-                workspace.innerHTML = `
-                    <div class="p-4 bg-green-100 rounded-lg text-center">
-                        <p class="text-green-800 font-semibold">Correct! 🎉</p>
-                        <p class="text-green-600">You earned ${result.points} points!</p>
-                        <button onclick="closeChallenge()" 
-                                class="mt-4 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-                            Continue
-                        </button>
-                    </div>
-                `;
-            }
-            
-            // Hide code editor and submit button
-            codeEditor.style.display = 'none';
-            const submitBtn = document.getElementById('submit-btn');
-            if (submitBtn) {
-                submitBtn.style.display = 'none';
+
+        if (response.ok) {
+            if (result.correct) {
+                showMessage('success', `${result.message} +${result.points} points!`);
+                document.getElementById('points-display').textContent = `Points: ${result.total_points}`;
+                closeChallenge();
+                await initializeGame(); // Refresh challenges to update completion status
+            } else {
+                showMessage('error', result.message);
+                if (result.locked_until) {
+                    closeChallenge();
+                    await initializeGame(); // Refresh challenges to update cooldown
+                }
             }
         } else {
-            // Add cooldown
-            if (result.locked_until) {
-                challengeCooldowns[currentChallenge.id] = result.locked_until;
-                saveCooldowns();
-                
-                // Show locked message
-                const workspace = document.getElementById('current-challenge');
-                if (workspace) {
-                    workspace.innerHTML = `
-                        <div class="p-4 bg-red-100 rounded-lg text-center">
-                            <p class="text-red-800 font-semibold">Incorrect solution!</p>
-                            <p class="text-red-600">Try again in ${formatTimeRemaining(result.locked_until)}</p>
-                            <button onclick="closeChallenge()" 
-                                    class="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
-                                Close
-                            </button>
-                        </div>
-                    `;
-                    
-                    // Hide code editor and submit button
-                    codeEditor.style.display = 'none';
-                    const submitBtn = document.getElementById('submit-btn');
-                    if (submitBtn) {
-                        submitBtn.style.display = 'none';
-                    }
-                }
+            if (result.error === 'Challenge already completed') {
+                showMessage('info', 'Challenge already completed');
+                closeChallenge();
+                await initializeGame();
+            } else if (result.error === 'Challenge is locked') {
+                showMessage('error', `Challenge is locked. Try again later.`);
+                closeChallenge();
+                await initializeGame();
+            } else {
+                showMessage('error', result.error || 'Failed to submit challenge');
             }
         }
     } catch (error) {
         console.error('Error submitting challenge:', error);
-        alert('Failed to submit code. Please try again.');
-    }
-}
-
-async function submitQuizAnswer(selectedIndex) {
-    if (!currentChallenge) return;
-    
-    try {
-        const response = await fetch('/api/submit', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                challengeId: currentChallenge.id,
-                answer: selectedIndex
-            })
-        });
-        
-        const result = await response.json();
-        
-        if (!response.ok) {
-            throw new Error(result.error || 'Failed to submit answer');
-        }
-        
-        // Update UI based on result
-        const options = document.querySelectorAll('#current-challenge button');
-        const selectedOption = options[selectedIndex];
-        
-        if (result.correct) {
-            // Correct answer
-            selectedOption.classList.add('bg-green-100', 'text-green-800', 'border-green-500');
-            selectedOption.innerHTML += ' ✓';
-            
-            // Update points
-            if (result.points) {
-                updatePoints(userPoints + result.points);
-            }
-            
-            // Mark challenge as completed and save
-            currentChallenge.completed = true;
-            saveCompletedChallenges();
-            
-            // Show success message
-            setTimeout(() => {
-                const workspace = document.getElementById('current-challenge');
-                if (workspace) {
-                    workspace.innerHTML = `
-                        <div class="p-4 bg-green-100 rounded-lg text-center">
-                            <p class="text-green-800 font-semibold">Correct! 🎉</p>
-                            <p class="text-green-600">You earned ${result.points} points!</p>
-                            <button onclick="closeChallenge()" 
-                                    class="mt-4 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
-                                Continue
-                            </button>
-                        </div>
-                    `;
-                }
-            }, 1000);
-        } else {
-            // Incorrect answer
-            selectedOption.classList.add('bg-red-100', 'text-red-800', 'border-red-500');
-            selectedOption.innerHTML += ' ✗';
-            
-            // Add cooldown
-            if (result.locked_until) {
-                challengeCooldowns[currentChallenge.id] = result.locked_until;
-                saveCooldowns();
-            }
-            
-            // Show error message after a short delay
-            setTimeout(() => {
-                const workspace = document.getElementById('current-challenge');
-                if (workspace) {
-                    workspace.innerHTML = `
-                        <div class="p-4 bg-red-100 rounded-lg text-center">
-                            <p class="text-red-800 font-semibold">Incorrect answer!</p>
-                            <p class="text-red-600">Try again in ${formatTimeRemaining(result.locked_until)}</p>
-                            <button onclick="closeChallenge()" 
-                                    class="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
-                                Close
-                            </button>
-                        </div>
-                    `;
-                }
-            }, 1000);
-        }
-    } catch (error) {
-        console.error('Error submitting quiz answer:', error);
-        alert('Failed to submit answer. Please try again.');
+        showMessage('error', 'Failed to submit challenge. Please try again.');
     }
 }
 
@@ -572,9 +543,7 @@ function renderQuizChallenge(challenge) {
 }
 
 function updatePoints(points) {
-    userPoints = points;
-    localStorage.setItem('userPoints', userPoints);
-    document.getElementById('points-display').textContent = `Points: ${userPoints}`;
+    document.getElementById('points-display').textContent = `Points: ${points}`;
 }
 
 function updateFiltersAndChallenges() {
@@ -608,7 +577,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.log('Initializing game...');
     
     // Initialize points display
-    document.getElementById('points-display').textContent = `Points: ${userPoints}`;
+    document.getElementById('points-display').textContent = `Points: 0`;
     
     // Add submit button event listener
     const submitBtn = document.getElementById('submit-btn');
@@ -617,7 +586,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     
     // Fetch challenges and render UI
-    await fetchChallenges();
+    await initializeGame();
     loadCompletedChallenges(); // Load completed challenges
     updateFiltersAndChallenges();
 });
