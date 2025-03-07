@@ -4,8 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CodeQuest Browser</title>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .points-animation {
             animation: points-pulse 0.5s ease-in-out;
@@ -19,33 +18,58 @@
 </head>
 <body class="bg-gray-50 min-h-screen">
     <div class="container mx-auto px-4 py-8">
-        <header class="flex justify-between items-center mb-8">
+        <!-- Header with points -->
+        <div class="flex justify-between items-center mb-8">
             <h1 class="text-3xl font-bold text-gray-900">CodeQuest Browser</h1>
-            <div id="points-display" class="text-xl font-semibold text-indigo-600 points-animation">Points: <span id="points">0</span></div>
-        </header>
+            <div id="points-display" class="text-xl font-semibold text-indigo-600 points-animation">Points: 0</div>
+        </div>
 
-        <div class="grid md:grid-cols-2 gap-8">
-            <div class="challenges-section bg-white p-6 rounded-lg shadow-md">
-                <h2 class="text-2xl font-bold mb-4">Challenges</h2>
-                
-                <!-- Filter Container -->
-                <div id="filter-container" class="mb-6"></div>
-                
-                <div id="challenges-list" class="space-y-4">
-                    <div class="p-4 text-gray-600">Loading challenges...</div>
+        <!-- Filter container -->
+        <div id="filter-container" class="bg-white rounded-lg shadow p-6 mb-8">
+            <!-- Filters will be rendered here -->
+        </div>
+
+        <!-- Challenge list -->
+        <div id="challenges-list" class="space-y-4">
+            <!-- Challenges will be rendered here -->
+        </div>
+
+        <!-- Challenge modal -->
+        <div id="challenge-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center">
+            <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col">
+                <div class="p-6 flex-grow overflow-auto">
+                    <div class="flex justify-between items-start mb-4">
+                        <h2 id="challenge-title" class="text-2xl font-bold text-gray-900"></h2>
+                        <button onclick="closeChallenge()" class="text-gray-500 hover:text-gray-700">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="challenge-description" class="text-gray-600 mb-4"></div>
+                    <div id="challenge-content" class="space-y-4">
+                        <!-- Challenge content will be rendered here -->
+                    </div>
+                </div>
+                <div class="border-t p-4 flex justify-end gap-4">
+                    <button onclick="closeChallenge()" class="px-4 py-2 text-gray-600 hover:text-gray-800">
+                        Close
+                    </button>
+                    <button id="submit-btn" class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                        Submit
+                    </button>
                 </div>
             </div>
+        </div>
 
-            <div class="workspace-section bg-white p-6 rounded-lg shadow-md">
-                <h2 class="text-2xl font-bold mb-4">Workspace</h2>
-                <div id="current-challenge" class="mb-4">
-                    <p class="text-gray-600">Select a challenge to begin</p>
-                </div>
-                <textarea id="code-editor" class="w-full h-32 p-2 border rounded-md font-mono" placeholder="Write your code here..." style="display: none;"></textarea>
-                <button id="submit-btn" class="mt-4 bg-indigo-600 text-white px-6 py-2 rounded-md hover:bg-indigo-700" style="display: none;">Submit</button>
+        <!-- Message toast -->
+        <div id="message-toast" class="fixed bottom-4 right-4 hidden">
+            <div class="bg-white rounded-lg shadow-lg p-4 flex items-center gap-3">
+                <div id="message-icon" class="flex-shrink-0"></div>
+                <div id="message-text" class="text-gray-800"></div>
             </div>
         </div>
     </div>
-    <script src="/static/app.js" defer></script>
+    <script src="app.js"></script>
 </body>
 </html>
