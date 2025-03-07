@@ -25,9 +25,10 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Pages
         uses: actions/configure-pages@v4
-      - name: Copy static files to root
+      - name: Copy static files and .nojekyll
         run: |
           cp -r static/* .
+          touch .nojekyll
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
